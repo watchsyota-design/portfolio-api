@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  # フロントエンド（すでにPC内にある my-profile イメージを使う）
+  frontend:
+    image: my-profile
+    ports:
+      - "8083:80"
+
+  # バックエンド（すでにPC内にある my-api イメージを使う）
+  backend:
+    image: my-api
+    ports:
+      - "8001:8000"
