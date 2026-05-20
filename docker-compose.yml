@@ -1,14 +1,35 @@
 version: '3.8'
 
 services:
-  # フロントエンド（すでにPC内にある my-profile イメージを使う）
+  # 1. フロントエンド（HTML/CSS）
   frontend:
     image: my-profile
     ports:
       - "8083:80"
 
-  # バックエンド（すでにPC内にある my-api イメージを使う）
+  # 2. バックエンド（FastAPI）
   backend:
     image: my-api
     ports:
       - "8001:8000"
+    environment:
+      # FastAPIに「データベースの場所とパスワード」を教える設定
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/mydb
+    depends_on:
+      - db # データベースが立ち上がってからFastAPIを動かすというルール
+
+  # 3. データベース（今回新しく追加！）
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data # コンテナを消してもデータを残すための「金庫」
+
+# データを保存しておく金庫の場所を定義
+volumes:
+  db_data:
