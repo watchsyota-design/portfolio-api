@@ -53,7 +53,7 @@ class ChatMessage(BaseModel):
 # 準備編②：データベース（PostgreSQL）の設定を追加！
 # ==========================================
 # docker-compose.ymlで設定したDBへの接続URL
-DB_URL = os.environ.get("DATABASE_URL", "postgresql://myuser:mypassword@db:5433/mydb")
+DB_URL = os.environ.get("DATABASE_URL", "postgresql://myuser:mypassword@db:5432/mydb")
 
 def get_db_connection():
     return psycopg2.connect(DB_URL)
