@@ -15,6 +15,8 @@ services:
     environment:
       # FastAPIに「データベースの場所とパスワード」を教える設定
       - DATABASE_URL=postgresql://myuser:mypassword@db:5433/mydb
+    env_file:
+      - .env # ここで.envファイルを読み込む
     depends_on:
       - db # データベースが立ち上がってからFastAPIを動かすというルール
 

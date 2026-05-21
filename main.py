@@ -1,4 +1,5 @@
 import os
+import psycopg2  # ← DB用にこれだけ追加！
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,18 +7,10 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 
 # ==========================================
-# 準備編：AIの設定
+# 準備編①：AIの設定（翔太さんのオリジナル！）
 # ==========================================
 load_dotenv()
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-
-# # --- 確認用に追加 ---
-# api_key = os.environ.get("GEMINI_API_KEY")
-# if not api_key:
-#     print("⚠️ APIキーが読み込めていません！.envファイルを確認してください。")
-# else:
-#     print(f"✅ APIキーを読み込みました (先頭4文字: {api_key[:4]}...)")
-# # ------------------
 
 system_prompt = """
 あなたは「渡辺翔太（Shota Watanabe）」のAIアシスタントです。翔太本人の代わりに、サイトを訪れた人からの質問にフレンドリーに答えてください。
@@ -38,9 +31,6 @@ model = genai.GenerativeModel(
     system_instruction=system_prompt
 )
 
-# ==========================================
-# API本体の設定
-# ==========================================
 app = FastAPI()
 
 app.add_middleware(
@@ -51,7 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 受け取るデータの形（2種類用意します！）
+# 受け取るデータの形
 class ContactMessage(BaseModel):
     name: str
     message: str
@@ -60,8 +50,38 @@ class ChatMessage(BaseModel):
     message: str
 
 # ==========================================
-# 窓口①：今までのお問い合わせ用（/contact）
+# 準備編②：データベース（PostgreSQL）の設定を追加！
 # ==========================================
+# docker-compose.ymlで設定したDBへの接続URL
+DB_URL = os.environ.get("DATABASE_URL", "postgresql://myuser:mypassword@db:5433/mydb")
+
+def get_db_connection():
+    return psycopg2.connect(DB_URL)
+
+# アプリ起動時に「いいね」を保存するテーブルを自動作成
+@app.on_event("startup")
+def startup():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS likes (
+            id SERIAL PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        )
+    """)
+    # 初期データがなければ「0回」として登録する
+    cursor.execute("SELECT count FROM likes WHERE id = 1")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO likes (id, count) VALUES (1, 0)")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# ==========================================
+# 窓口（APIエンドポイント）
+# ==========================================
+
+# 窓口①：今までのお問い合わせ用（/contact）
 @app.post("/contact")
 def receive_message(msg: ContactMessage):
     print(f"！！！【新着メッセージ】！！！")
@@ -70,9 +90,7 @@ def receive_message(msg: ContactMessage):
     print(f"！！！！！！！！！！！！！！！")
     return {"status": "success", "reply": f"{msg.name}さん、メッセージを受け取りました！"}
 
-# ==========================================
-# 窓口②：新しいAIチャット用（/chat）
-# ==========================================
+# 窓口②：AIチャット用（/chat）
 @app.post("/chat")
 def chat_with_ai(msg: ChatMessage):
     response = model.generate_content(msg.message)
@@ -80,37 +98,30 @@ def chat_with_ai(msg: ChatMessage):
     print(f"AIの回答: {response.text}")
     return {"reply": response.text}
 
-# ==========================================
-# サーバー起動用の設定
-# ==========================================
+# 窓口③：【NEW】いいねの「現在の数」を見る（/likes GET）
+@app.get("/likes")
+def get_likes():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT count FROM likes WHERE id = 1")
+    count = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return {"likes": count}
+
+# 窓口④：【NEW】いいねの数を「+1」する（/likes POST）
+@app.post("/likes")
+def add_like():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE likes SET count = count + 1 WHERE id = 1 RETURNING count")
+    new_count = cursor.fetchone()[0]
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"likes": new_count}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-# import os
-# import google.generativeai as genai
-# from dotenv import load_dotenv
-
-# load_dotenv()
-# api_key = os.environ.get("GEMINI_API_KEY")
-
-# print("--- 診断開始 ---")
-# print(f"1. ライブラリのバージョン: {genai.__version__}")
-# print(f"2. 使用中のPythonの場所: {os.sys.executable}")
-
-# if not api_key:
-#     print("3. ⚠️ APIキーが読み込めていません！.envを確認してください。")
-# else:
-#     print(f"3. ✅ APIキー読み込み成功 (先頭: {api_key[:4]})")
-#     genai.configure(api_key=api_key)
-    
-#     print("4. 使用可能なモデル一覧:")
-#     try:
-#         # あなたのAPIキーで今、本当に使えるモデルをGoogleに聞きに行きます
-#         for m in genai.list_models():
-#             if 'generateContent' in m.supported_generation_methods:
-#                 print(f"   - {m.name}")
-#     except Exception as e:
-#         print(f"   ❌ モデル一覧の取得に失敗: {e}")
-# print("--- 診断終了 ---")
